@@ -1,0 +1,56 @@
+import { SmartApiClient, collectLiveSmartApiSnapshots } from './smartapi.js';
+import { isMarketHours, getISTNow, formatDateIST, formatTimeIST } from './ist.js';
+
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+async function runLiveDaemon() {
+  console.log('Initializing NIFTY Option Chain Live Collector Daemon...');
+
+  const client = new SmartApiClient();
+  
+  try {
+    await client.login();
+  } catch (err) {
+    console.error('Failed to log in to SmartAPI on daemon start:', err.message);
+  }
+
+  let lastCollectedMinute = null;
+
+  while (true) {
+    const now = getISTNow();
+    const dayStr = formatDateIST(now);
+    const timeStr = formatTimeIST(now);
+    const currentMinuteStr = `${dayStr}_${timeStr.substring(0, 5)}`;
+
+    if (isMarketHours(now)) {
+      const minute = now.getMinutes();
+      // Execute snapshot on every 5th minute (0, 5, 10, 15, ..., 55)
+      if (minute % 5 === 0 && lastCollectedMinute !== currentMinuteStr) {
+        lastCollectedMinute = currentMinuteStr;
+        console.log(`\n[${timeStr}] Market open & interval match. Fetching live snapshot...`);
+        try {
+          const startTime = Date.now();
+          await collectLiveSmartApiSnapshots(client);
+          const elapsed = Date.now() - startTime;
+          console.log(`[${timeStr}] Live snapshot collection complete in ${elapsed}ms`);
+        } catch (err) {
+          console.error(`[${timeStr}] Live collection error:`, err.message);
+        }
+      }
+    } else {
+      // Outside market hours heartbeat
+      if (now.getSeconds() === 0 && now.getMinutes() % 15 === 0) {
+        console.log(`[${timeStr}] Heartbeat: Outside market hours. Idle.`);
+      }
+    }
+
+    await sleep(10000); // Check every 10 seconds
+  }
+}
+
+runLiveDaemon().catch(err => {
+  console.error('Live daemon fatal error:', err);
+  process.exit(1);
+});
