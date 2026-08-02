@@ -16,5 +16,8 @@
     "dotenv": "^16.4.5",
     "otplib": "^12.0.1",
     "smartapi-javascript": "^1.0.10"
+  },
+  "pnpm": {
+    "minimumReleaseAge": 0
   }
 }
