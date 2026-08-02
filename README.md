@@ -155,6 +155,12 @@ Run the live collector daemon.
 npm run live
 ```
 
+#### Running with Crontab (Recommended)
+Add a crontab entry to collect snapshot every 5 minutes during market hours:
+```bash
+*/5 9-15 * * 1-5 cd /home/ubuntu/nifty-optionchain-data && /usr/bin/node src/collect-once.js >> logs/cron-collect.log 2>&1
+```
+
 #### Running with PM2
 For production deployment, run using `pm2`:
 ```bash
