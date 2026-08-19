@@ -44,7 +44,7 @@ export function normalizeOptionPerks(rawData, expiryDate, dayStr, timeStr) {
   };
 }
 
-export function normalizeSmartAPI(fetchedQuotes, tokenMap, spotLtp, expiryDate, isoSnapshotTime) {
+export function normalizeSmartAPI(fetchedQuotes, tokenMap, spotLtp, expiryDate, isoSnapshotTime, indexName = 'NIFTY', exchange = 'NFO') {
   // tokenMap: Map of symbolToken -> { strike: number, optionType: 'CE'|'PE', symbol: string }
   const strikesMap = new Map();
 
@@ -79,12 +79,12 @@ export function normalizeSmartAPI(fetchedQuotes, tokenMap, spotLtp, expiryDate, 
 
     const row = strikesMap.get(strike);
     if (meta.optionType === 'CE') {
-      row.call_inst_type = `NFO:${meta.symbol}`;
+      row.call_inst_type = `${exchange}:${meta.symbol}`;
       row.calls_ltp = Number(q.ltp) || 0;
       row.calls_oi = Number(q.opnInterest) || 0;
       row.calls_volume = Number(q.tradeVolume) || 0;
     } else if (meta.optionType === 'PE') {
-      row.put_inst_type = `NFO:${meta.symbol}`;
+      row.put_inst_type = `${exchange}:${meta.symbol}`;
       row.puts_ltp = Number(q.ltp) || 0;
       row.puts_oi = Number(q.opnInterest) || 0;
       row.puts_volume = Number(q.tradeVolume) || 0;
@@ -95,11 +95,11 @@ export function normalizeSmartAPI(fetchedQuotes, tokenMap, spotLtp, expiryDate, 
 
   return {
     source: 'smartapi',
-    symbol_name: 'NIFTY',
+    symbol_name: indexName,
     expiry_date: expiryDate,
     snapshot_time: isoSnapshotTime,
     index_close: spotLtp,
     greeks_available: false,
-    rows,
+    rows: rows,
   };
 }

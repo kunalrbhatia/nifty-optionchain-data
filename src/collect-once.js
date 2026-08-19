@@ -1,5 +1,6 @@
 import { SmartApiClient, collectLiveSmartApiSnapshots } from './smartapi.js';
-import { isMarketHours, getISTNow, formatDateIST, formatTimeIST } from './ist.js';
+import { downloadScripMaster } from './scripMaster.js';
+import { isMarketHours, getISTNow, formatTimeIST } from './ist.js';
 
 async function main() {
   const now = getISTNow();
@@ -13,7 +14,22 @@ async function main() {
   const client = new SmartApiClient();
   try {
     await client.login();
-    await collectLiveSmartApiSnapshots(client);
+    const scripData = await downloadScripMaster();
+
+    // Collect NIFTY snapshots
+    try {
+      await collectLiveSmartApiSnapshots(client, scripData, 'NIFTY');
+    } catch (err) {
+      console.error(`[${timeStr}] NIFTY collection error:`, err.message);
+    }
+
+    // Collect SENSEX snapshots
+    try {
+      await collectLiveSmartApiSnapshots(client, scripData, 'SENSEX');
+    } catch (err) {
+      console.error(`[${timeStr}] SENSEX collection error:`, err.message);
+    }
+
     console.log(`[${timeStr}] Live snapshot collection complete.`);
   } catch (err) {
     console.error(`[${timeStr}] Live collection error:`, err.message);

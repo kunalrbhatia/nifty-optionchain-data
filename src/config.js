@@ -10,6 +10,7 @@ export const DATA_DIR = path.join(ROOT_DIR, 'data');
 export const RAW_OPTIONPERKS_DIR = path.join(DATA_DIR, 'raw', 'optionperks');
 export const RAW_SMARTAPI_DIR = path.join(DATA_DIR, 'raw', 'smartapi');
 export const CHAINS_DIR = path.join(DATA_DIR, 'chains');
+export const CHAINS_SENSEX_DIR = path.join(DATA_DIR, 'chains-sensex');
 export const MANIFEST_PATH = path.join(DATA_DIR, 'manifest.json');
 export const SCRIP_MASTER_PATH = path.join(DATA_DIR, 'scrip_master.json');
 

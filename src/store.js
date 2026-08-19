@@ -1,6 +1,6 @@
 import fs from 'fs';
 import path from 'path';
-import { RAW_OPTIONPERKS_DIR, RAW_SMARTAPI_DIR, CHAINS_DIR, MANIFEST_PATH } from './config.js';
+import { RAW_OPTIONPERKS_DIR, RAW_SMARTAPI_DIR, CHAINS_DIR, CHAINS_SENSEX_DIR, MANIFEST_PATH } from './config.js';
 
 function ensureDirSync(dirPath) {
   if (!fs.existsSync(dirPath)) {
@@ -75,8 +75,9 @@ export function saveRawSnapshot(source, dateStr, timeStr, expiryDate, rawData) {
   writeJsonAtomicSync(filePath, rawData);
 }
 
-export function saveUnifiedSnapshot(dateStr, timeStr, expiryDate, unifiedData) {
+export function saveUnifiedSnapshot(dateStr, timeStr, expiryDate, unifiedData, indexName = 'NIFTY') {
   const timeKey = timeStr.replace(/:/g, '').substring(0, 4);
-  const filePath = path.join(CHAINS_DIR, dateStr, `${expiryDate}_${timeKey}.json`);
+  const baseDir = indexName.toUpperCase() === 'SENSEX' ? CHAINS_SENSEX_DIR : CHAINS_DIR;
+  const filePath = path.join(baseDir, dateStr, `${expiryDate}_${timeKey}.json`);
   writeJsonAtomicSync(filePath, unifiedData);
 }
