@@ -42,7 +42,7 @@ export class SmartApiClient {
     console.log('SmartAPI authenticated successfully.');
   }
 
-  async fetchMarketDataChunk(tokens) {
+  async fetchMarketDataChunk(tokens, exchange = 'NFO') {
     // Retry on failure or session expiry
     let attempts = 0;
     while (attempts < 3) {
@@ -51,7 +51,7 @@ export class SmartApiClient {
         const response = await this.smartApi.marketData({
           mode: 'FULL',
           exchangeTokens: {
-            NFO: tokens,
+            [exchange]: tokens,
           },
         });
 
@@ -74,11 +74,11 @@ export class SmartApiClient {
     return [];
   }
 
-  async fetchSpotLtp(spotToken = '99926000') {
+  async fetchSpotLtp(spotToken = '99926000', spotExchange = 'NSE') {
     const response = await this.smartApi.marketData({
       mode: 'FULL',
       exchangeTokens: {
-        NSE: [spotToken],
+        [spotExchange]: [spotToken],
       },
     });
 
@@ -89,25 +89,38 @@ export class SmartApiClient {
   }
 }
 
-export async function collectLiveSmartApiSnapshots(client) {
-  const scripData = await downloadScripMaster();
-  const { options, spotToken } = parseNiftyOptionsMaster(scripData);
+export async function collectLiveSmartApiSnapshots(client, preDownloadedScripMaster = null, indexName = 'NIFTY') {
+  const isSensex = indexName.toUpperCase() === 'SENSEX';
+  const targetIndex = isSensex ? 'SENSEX' : 'NIFTY';
+  const optionExch = isSensex ? 'BFO' : 'NFO';
+  const spotExch = isSensex ? 'BSE' : 'NSE';
+  const strikeRange = isSensex ? 5000 : 2500;
 
-  const spotLtp = await client.fetchSpotLtp(spotToken);
+  const scripData = preDownloadedScripMaster || (await downloadScripMaster());
+  const { parseIndexOptionsMaster } = await import('./scripMaster.js');
+  const { options, spotToken } = parseIndexOptionsMaster(scripData, targetIndex);
+
+  const spotLtp = await client.fetchSpotLtp(spotToken, spotExch);
   if (!spotLtp) {
-    throw new Error('Could not fetch NIFTY spot LTP');
+    console.warn(`Could not fetch ${targetIndex} spot LTP. Skipping ${targetIndex} collection.`);
+    return;
   }
 
   const expiries = getNearestExpiries(options, 4);
+  if (!expiries || expiries.length === 0) {
+    console.log(`No upcoming expiries found for ${targetIndex}. Skipping collection.`);
+    return;
+  }
+
   const now = new Date();
   const dayStr = formatDateIST(now);
   const timeStr = formatTimeIST(now);
   const isoSnapshotTime = formatISOWithISTOffset(now);
 
   for (const expiryDate of expiries) {
-    // Filter options for this expiry and bound strikes around spot (±2500)
-    const minStrike = spotLtp - 2500;
-    const maxStrike = spotLtp + 2500;
+    // Filter options for this expiry and bound strikes around spot
+    const minStrike = spotLtp - strikeRange;
+    const maxStrike = spotLtp + strikeRange;
 
     const expiryOptions = options.filter(
       o => o.expiry === expiryDate && o.strike >= minStrike && o.strike <= maxStrike
@@ -129,19 +142,20 @@ export async function collectLiveSmartApiSnapshots(client) {
     const fetchedQuotes = [];
     for (let i = 0; i < tokens.length; i += CHUNK_SIZE) {
       const chunk = tokens.slice(i, i + CHUNK_SIZE);
-      const quotes = await client.fetchMarketDataChunk(chunk);
+      const quotes = await client.fetchMarketDataChunk(chunk, optionExch);
       fetchedQuotes.push(...quotes);
       await sleep(100);
     }
 
-    // Save raw snapshot
-    saveRawSnapshot('smartapi', dayStr, timeStr, expiryDate, fetchedQuotes);
+    // Save raw snapshot (suffixed if sensex)
+    const rawSource = isSensex ? 'smartapi-sensex' : 'smartapi';
+    saveRawSnapshot(rawSource, dayStr, timeStr, expiryDate, fetchedQuotes);
 
     // Normalize and save unified snapshot
-    const normalized = normalizeSmartAPI(fetchedQuotes, tokenMap, spotLtp, expiryDate, isoSnapshotTime);
-    saveUnifiedSnapshot(dayStr, timeStr, expiryDate, normalized);
-    updateManifest(dayStr, timeStr, expiryDate, 'smartapi', true);
+    const normalized = normalizeSmartAPI(fetchedQuotes, tokenMap, spotLtp, expiryDate, isoSnapshotTime, targetIndex, optionExch);
+    saveUnifiedSnapshot(dayStr, timeStr, expiryDate, normalized, targetIndex);
+    updateManifest(dayStr, timeStr, expiryDate, rawSource, true);
 
-    console.log(`[${timeStr.substring(0, 5)}] NIFTY ${expiryDate} chain saved: ${normalized.rows.length} rows (spot: ${spotLtp})`);
+    console.log(`[${timeStr.substring(0, 5)}] ${targetIndex} ${expiryDate} chain saved: ${normalized.rows.length} rows (spot: ${spotLtp})`);
   }
 }

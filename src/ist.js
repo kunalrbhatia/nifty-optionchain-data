@@ -48,6 +48,18 @@ export function isMarketHours(date = getISTNow()) {
   return totalMin >= openMin && totalMin <= closeMin;
 }
 
+export function isExpiryDay(indexName = 'NIFTY', date = getISTNow()) {
+  const day = date.getDay();
+  const index = indexName.toUpperCase();
+  if (index === 'NIFTY') {
+    return day === 2; // Tuesday
+  }
+  if (index === 'SENSEX') {
+    return day === 4; // Thursday
+  }
+  return false;
+}
+
 export function getMarketSnapshotsForDay(dateStr) {
   // 09:15 to 15:30 every 5 mins
   const snapshots = [];
@@ -61,3 +73,4 @@ export function getMarketSnapshotsForDay(dateStr) {
   }
   return snapshots;
 }
+

@@ -38,20 +38,37 @@ export async function downloadScripMaster(forceRefresh = false) {
   return data;
 }
 
-export function parseNiftyOptionsMaster(scripMasterData) {
-  // Filter for NIFTY OPTIDX NFO instruments
+export function parseIndexOptionsMaster(scripMasterData, indexName = 'NIFTY') {
+  const isSensex = indexName.toUpperCase() === 'SENSEX';
+  const targetName = isSensex ? 'SENSEX' : 'NIFTY';
+  const targetOptionExch = isSensex ? 'BFO' : 'NFO';
+  const targetSpotExch = isSensex ? 'BSE' : 'NSE';
+  let defaultSpotToken = isSensex ? '99919000' : '99926000';
+
   const options = [];
-  let spotToken = '99926000'; // Default NSE NIFTY 50 spot token
+  let spotToken = defaultSpotToken;
 
   for (const item of scripMasterData) {
-    if (item.symbol === 'NIFTY' && item.exch_seg === 'NSE' && item.instrumenttype === 'AMXIDX') {
+    if (
+      item.symbol === targetName &&
+      item.exch_seg === targetSpotExch &&
+      (item.instrumenttype === 'AMXIDX' || item.instrumenttype === 'INDEX')
+    ) {
       spotToken = item.token;
     }
-    if (item.name === 'NIFTY' && item.exch_seg === 'NFO' && item.instrumenttype === 'OPTIDX') {
+    if (
+      item.name === targetName &&
+      item.exch_seg === targetOptionExch &&
+      item.instrumenttype === 'OPTIDX'
+    ) {
       const isoExpiry = convertDDMMMYYYYToISO(item.expiry);
       const strike = Number(item.strike) / 100;
       const symbol = item.symbol;
-      const optionType = symbol.endsWith('CE') ? 'CE' : symbol.endsWith('PE') ? 'PE' : null;
+      const optionType = symbol.endsWith('CE')
+        ? 'CE'
+        : symbol.endsWith('PE')
+          ? 'PE'
+          : null;
 
       if (optionType) {
         options.push({
@@ -67,6 +84,10 @@ export function parseNiftyOptionsMaster(scripMasterData) {
   }
 
   return { options, spotToken };
+}
+
+export function parseNiftyOptionsMaster(scripMasterData) {
+  return parseIndexOptionsMaster(scripMasterData, 'NIFTY');
 }
 
 export function getNearestExpiries(optionsList, count = 4, targetDateStr = null) {

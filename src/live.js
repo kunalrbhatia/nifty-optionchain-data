@@ -1,8 +1,16 @@
 import { SmartApiClient, collectLiveSmartApiSnapshots } from './smartapi.js';
-import { isMarketHours, getISTNow, formatDateIST, formatTimeIST } from './ist.js';
+import { isMarketHours, isExpiryDay, getISTNow, formatDateIST, formatTimeIST } from './ist.js';
 
 function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+function getMsToNextBoundary(now) {
+  const minute = now.getMinutes();
+  const second = now.getSeconds();
+  const ms = now.getMilliseconds();
+  const minutesToNext = 5 - (minute % 5);
+  return (minutesToNext * 60 - second) * 1000 - ms;
 }
 
 async function runLiveDaemon() {
@@ -24,33 +32,35 @@ async function runLiveDaemon() {
     const timeStr = formatTimeIST(now);
     const currentMinuteStr = `${dayStr}_${timeStr.substring(0, 5)}`;
 
-    if (isMarketHours(now)) {
+    if (isExpiryDay('NIFTY', now) && isMarketHours(now)) {
       const minute = now.getMinutes();
       // Execute snapshot on every 5th minute (0, 5, 10, 15, ..., 55)
       if (minute % 5 === 0 && lastCollectedMinute !== currentMinuteStr) {
         lastCollectedMinute = currentMinuteStr;
-        console.log(`\n[${timeStr}] Market open & interval match. Fetching live snapshot...`);
+        console.log(`\n[${timeStr}] Market open & NIFTY expiry day match. Fetching live snapshot...`);
         try {
           const startTime = Date.now();
-          await collectLiveSmartApiSnapshots(client);
+          await collectLiveSmartApiSnapshots(client, null, 'NIFTY');
           const elapsed = Date.now() - startTime;
-          console.log(`[${timeStr}] Live snapshot collection complete in ${elapsed}ms`);
+          console.log(`[${timeStr}] NIFTY live snapshot collection complete in ${elapsed}ms`);
         } catch (err) {
-          console.error(`[${timeStr}] Live collection error:`, err.message);
+          console.error(`[${timeStr}] NIFTY live collection error:`, err.message);
         }
       }
     } else {
-      // Outside market hours heartbeat
+      // Outside market hours or non-expiry day heartbeat
       if (now.getSeconds() === 0 && now.getMinutes() % 15 === 0) {
-        console.log(`[${timeStr}] Heartbeat: Outside market hours. Idle.`);
+        console.log(`[${timeStr}] Heartbeat: Outside NIFTY expiry trading window. Idle.`);
       }
     }
 
-    await sleep(10000); // Check every 10 seconds
+    const msToNext = getMsToNextBoundary(getISTNow());
+    await sleep(Math.max(msToNext, 1000));
   }
 }
 
 runLiveDaemon().catch(err => {
-  console.error('Live daemon fatal error:', err);
+  console.error('NIFTY live daemon fatal error:', err);
   process.exit(1);
 });
+

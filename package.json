@@ -7,7 +7,9 @@
   "scripts": {
     "backfill": "node src/backfill.js",
     "live": "node src/live.js",
+    "sensex-live": "node src/sensex-live.js",
     "collect-once": "node src/collect-once.js",
+    "sensex-collect-once": "node src/sensex-collect-once.js",
     "verify": "node scripts/verify-schema.mjs"
   },
   "keywords": [],

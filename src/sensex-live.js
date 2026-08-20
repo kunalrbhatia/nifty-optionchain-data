@@ -1,18 +1,27 @@
 import { SensexSmartApiClient, collectSensexSnapshot } from './sensexSmartapi.js';
-import { isMarketHours, getISTNow, formatDateIST, formatTimeIST } from './ist.js';
+import { isMarketHours, isExpiryDay, getISTNow, formatDateIST, formatTimeIST } from './ist.js';
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function getMsToNextBoundary(now) {
+  const minute = now.getMinutes();
+  const second = now.getSeconds();
+  const ms = now.getMilliseconds();
+  const minutesToNext = 5 - (minute % 5);
+  return (minutesToNext * 60 - second) * 1000 - ms;
 }
 
 async function runSensexLiveDaemon() {
   console.log('Initializing SENSEX Option Chain Live Collector Daemon...');
 
   const client = new SensexSmartApiClient();
+
   try {
     await client.login();
   } catch (err) {
-    console.error('Failed to log in to SmartAPI on daemon start:', err.message);
+    console.error('Failed to log in to SmartAPI on SENSEX daemon start:', err.message);
   }
 
   let lastCollectedMinute = null;
@@ -24,12 +33,12 @@ async function runSensexLiveDaemon() {
     const timeStr = formatTimeIST(now);
     const currentMinuteStr = `${dayStr}_${timeStr.substring(0, 5)}`;
 
-    if (isMarketHours(now)) {
+    if (isExpiryDay('SENSEX', now) && isMarketHours(now)) {
       const minute = now.getMinutes();
-      // Snapshot on every 5th minute (0, 5, 10, ..., 55)
+      // Execute snapshot on every 5th minute (0, 5, 10, 15, ..., 55)
       if (minute % 5 === 0 && lastCollectedMinute !== currentMinuteStr) {
         lastCollectedMinute = currentMinuteStr;
-        console.log(`\n[${timeStr}] Market open & interval match. Fetching SENSEX snapshot...`);
+        console.log(`\n[${timeStr}] Market open & SENSEX expiry day match. Fetching live snapshot...`);
         try {
           const startTime = Date.now();
           const { results, spotLtp } = await collectSensexSnapshot(client);
@@ -49,16 +58,19 @@ async function runSensexLiveDaemon() {
         }
       }
     } else {
-      // Reset the dedup guard outside market hours so the first 5-min tick
-      // after open fires immediately.
+      // Outside market hours or non-expiry day heartbeat
+      if (now.getSeconds() === 0 && now.getMinutes() % 15 === 0) {
+        console.log(`[${timeStr}] Heartbeat: Outside SENSEX expiry trading window. Idle.`);
+      }
       lastCollectedMinute = null;
     }
 
-    await sleep(15000); // check every 15s; snapshot only on 5-min boundaries
+    const msToNext = getMsToNextBoundary(getISTNow());
+    await sleep(Math.max(msToNext, 1000));
   }
 }
 
 runSensexLiveDaemon().catch((err) => {
-  console.error('Fatal daemon error:', err);
+  console.error('SENSEX live daemon fatal error:', err);
   process.exit(1);
 });
