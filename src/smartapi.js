@@ -75,15 +75,39 @@ export class SmartApiClient {
   }
 
   async fetchSpotLtp(spotToken = '99926000', spotExchange = 'NSE') {
-    const response = await this.smartApi.marketData({
-      mode: 'FULL',
-      exchangeTokens: {
-        [spotExchange]: [spotToken],
-      },
-    });
+    // Retry on failure or session expiry (same pattern as fetchMarketDataChunk)
+    let attempts = 0;
+    while (attempts < 3) {
+      attempts++;
+      try {
+        const response = await this.smartApi.marketData({
+          mode: 'FULL',
+          exchangeTokens: {
+            [spotExchange]: [spotToken],
+          },
+        });
 
-    if (response?.status && response?.data?.fetched?.[0]) {
-      return Number(response.data.fetched[0].ltp) || 0;
+        if (response?.status && response?.data?.fetched?.[0]) {
+          const ltp = Number(response.data.fetched[0].ltp) || 0;
+          if (ltp > 0) return ltp;
+        }
+
+        if (response?.status && response?.data?.fetched?.[0]) {
+          const ltp = Number(response.data.fetched[0].ltp) || 0;
+          if (ltp > 0) return ltp;
+        }
+
+        if (response?.message?.includes('Invalid') || response?.errorcode === 'AG8001') {
+          console.log('SmartAPI JWT expired (spot fetch). Re-authenticating...');
+          await this.login();
+          continue;
+        }
+
+        throw new Error(response?.message || 'Spot LTP fetch failed');
+      } catch (err) {
+        if (attempts >= 3) throw err;
+        await sleep(1000);
+      }
     }
     return 0;
   }
