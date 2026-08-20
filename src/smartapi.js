@@ -92,11 +92,6 @@ export class SmartApiClient {
           if (ltp > 0) return ltp;
         }
 
-        if (response?.status && response?.data?.fetched?.[0]) {
-          const ltp = Number(response.data.fetched[0].ltp) || 0;
-          if (ltp > 0) return ltp;
-        }
-
         if (response?.message?.includes('Invalid') || response?.errorcode === 'AG8001') {
           console.log('SmartAPI JWT expired (spot fetch). Re-authenticating...');
           await this.login();
