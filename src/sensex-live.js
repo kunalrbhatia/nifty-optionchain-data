@@ -1,8 +1,8 @@
-import { SmartApiClient, collectLiveSmartApiSnapshots } from './smartapi.js';
+import { SensexSmartApiClient, collectSensexSnapshot } from './sensexSmartapi.js';
 import { isMarketHours, isExpiryDay, getISTNow, formatDateIST, formatTimeIST } from './ist.js';
 
 function sleep(ms) {
-  return new Promise(resolve => setTimeout(resolve, ms));
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function getMsToNextBoundary(now) {
@@ -16,7 +16,7 @@ function getMsToNextBoundary(now) {
 async function runSensexLiveDaemon() {
   console.log('Initializing SENSEX Option Chain Live Collector Daemon...');
 
-  const client = new SmartApiClient();
+  const client = new SensexSmartApiClient();
 
   try {
     await client.login();
@@ -25,6 +25,7 @@ async function runSensexLiveDaemon() {
   }
 
   let lastCollectedMinute = null;
+  let consecutiveFailures = 0;
 
   while (true) {
     const now = getISTNow();
@@ -40,11 +41,20 @@ async function runSensexLiveDaemon() {
         console.log(`\n[${timeStr}] Market open & SENSEX expiry day match. Fetching live snapshot...`);
         try {
           const startTime = Date.now();
-          await collectLiveSmartApiSnapshots(client, null, 'SENSEX');
+          const { results, spotLtp } = await collectSensexSnapshot(client);
           const elapsed = Date.now() - startTime;
-          console.log(`[${timeStr}] SENSEX live snapshot collection complete in ${elapsed}ms`);
+          consecutiveFailures = 0;
+          console.log(
+            `[${timeStr}] SENSEX snapshot complete in ${elapsed}ms — ${results.length} expiries (spot: ${spotLtp})`
+          );
         } catch (err) {
+          consecutiveFailures++;
           console.error(`[${timeStr}] SENSEX live collection error:`, err.message);
+          if (consecutiveFailures >= 3) {
+            console.log('Re-authenticating after repeated failures...');
+            try { await client.login(); } catch (e) { console.error('Re-login failed:', e.message); }
+            consecutiveFailures = 0;
+          }
         }
       }
     } else {
@@ -52,6 +62,7 @@ async function runSensexLiveDaemon() {
       if (now.getSeconds() === 0 && now.getMinutes() % 15 === 0) {
         console.log(`[${timeStr}] Heartbeat: Outside SENSEX expiry trading window. Idle.`);
       }
+      lastCollectedMinute = null;
     }
 
     const msToNext = getMsToNextBoundary(getISTNow());
@@ -59,7 +70,7 @@ async function runSensexLiveDaemon() {
   }
 }
 
-runSensexLiveDaemon().catch(err => {
+runSensexLiveDaemon().catch((err) => {
   console.error('SENSEX live daemon fatal error:', err);
   process.exit(1);
 });
