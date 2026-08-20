@@ -13,15 +13,15 @@ function getMsToNextBoundary(now) {
   return (minutesToNext * 60 - second) * 1000 - ms;
 }
 
-async function runLiveDaemon() {
-  console.log('Initializing NIFTY Option Chain Live Collector Daemon...');
+async function runSensexLiveDaemon() {
+  console.log('Initializing SENSEX Option Chain Live Collector Daemon...');
 
   const client = new SmartApiClient();
-  
+
   try {
     await client.login();
   } catch (err) {
-    console.error('Failed to log in to SmartAPI on daemon start:', err.message);
+    console.error('Failed to log in to SmartAPI on SENSEX daemon start:', err.message);
   }
 
   let lastCollectedMinute = null;
@@ -32,25 +32,25 @@ async function runLiveDaemon() {
     const timeStr = formatTimeIST(now);
     const currentMinuteStr = `${dayStr}_${timeStr.substring(0, 5)}`;
 
-    if (isExpiryDay('NIFTY', now) && isMarketHours(now)) {
+    if (isExpiryDay('SENSEX', now) && isMarketHours(now)) {
       const minute = now.getMinutes();
       // Execute snapshot on every 5th minute (0, 5, 10, 15, ..., 55)
       if (minute % 5 === 0 && lastCollectedMinute !== currentMinuteStr) {
         lastCollectedMinute = currentMinuteStr;
-        console.log(`\n[${timeStr}] Market open & NIFTY expiry day match. Fetching live snapshot...`);
+        console.log(`\n[${timeStr}] Market open & SENSEX expiry day match. Fetching live snapshot...`);
         try {
           const startTime = Date.now();
-          await collectLiveSmartApiSnapshots(client, null, 'NIFTY');
+          await collectLiveSmartApiSnapshots(client, null, 'SENSEX');
           const elapsed = Date.now() - startTime;
-          console.log(`[${timeStr}] NIFTY live snapshot collection complete in ${elapsed}ms`);
+          console.log(`[${timeStr}] SENSEX live snapshot collection complete in ${elapsed}ms`);
         } catch (err) {
-          console.error(`[${timeStr}] NIFTY live collection error:`, err.message);
+          console.error(`[${timeStr}] SENSEX live collection error:`, err.message);
         }
       }
     } else {
       // Outside market hours or non-expiry day heartbeat
       if (now.getSeconds() === 0 && now.getMinutes() % 15 === 0) {
-        console.log(`[${timeStr}] Heartbeat: Outside NIFTY expiry trading window. Idle.`);
+        console.log(`[${timeStr}] Heartbeat: Outside SENSEX expiry trading window. Idle.`);
       }
     }
 
@@ -59,8 +59,7 @@ async function runLiveDaemon() {
   }
 }
 
-runLiveDaemon().catch(err => {
-  console.error('NIFTY live daemon fatal error:', err);
+runSensexLiveDaemon().catch(err => {
+  console.error('SENSEX live daemon fatal error:', err);
   process.exit(1);
 });
-
