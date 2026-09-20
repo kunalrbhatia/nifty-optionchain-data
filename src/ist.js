@@ -60,6 +60,16 @@ export function isExpiryDay(indexName = 'NIFTY', date = getISTNow()) {
   return false;
 }
 
+/**
+ * Milliseconds remaining until the next TOTP time-step (codes are single-use and
+ * rotate every 30s, aligned to the epoch). +1s margin so the retry lands safely
+ * inside the next window rather than on its boundary.
+ */
+export function msToNextTotpWindow(periodSec = 30) {
+  const remainderSec = periodSec - (Math.floor(Date.now() / 1000) % periodSec);
+  return remainderSec * 1000 + 1000;
+}
+
 export function getMarketSnapshotsForDay(dateStr) {
   // 09:15 to 15:30 every 5 mins
   const snapshots = [];
