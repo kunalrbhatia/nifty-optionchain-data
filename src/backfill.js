@@ -26,9 +26,9 @@ function getTuesdaysInRange(startDateStr, endDateStr) {
   let curr = new Date(startDateStr);
   const end = new Date(endDateStr);
   
-  // Extend end date by 30 days to capture expiries for trading days near the end of the range
+  // Extend end date by 75 days so far-dated monthly (~45 DTE) expiries are in range
   const extendedEnd = new Date(end);
-  extendedEnd.setDate(extendedEnd.getDate() + 30);
+  extendedEnd.setDate(extendedEnd.getDate() + 75);
 
   while (curr <= extendedEnd) {
     if (curr.getDay() === 2) { // Tuesday
@@ -46,6 +46,26 @@ function getNearExpiriesForDay(tradingDayStr, allExpiries, count = 2) {
   return allExpiries
     .filter(exp => exp >= tradingDayStr)
     .slice(0, count);
+}
+
+/**
+ * The monthly expiry (~45 DTE) for a given trading day: the LAST listed expiry
+ * within each calendar month. Needed by the NIFTY Monthly 45-DTE naked straddle
+ * backtest — getNearExpiriesForDay only ever returns the near weeklies.
+ */
+function getFarMonthlyExpiriesForDay(tradingDayStr, allExpiries, minDte = 18, maxDte = 70) {
+  const baseMs = Date.parse(`${tradingDayStr}T00:00:00Z`);
+  const lastByMonth = new Map();
+  for (const exp of [...allExpiries].sort()) {
+    const ym = exp.substring(0, 7);
+    if (!lastByMonth.has(ym) || exp > lastByMonth.get(ym)) lastByMonth.set(ym, exp);
+  }
+  const inBand = [];
+  for (const exp of lastByMonth.values()) {
+    const dte = Math.round((Date.parse(`${exp}T00:00:00Z`) - baseMs) / 86400000);
+    if (dte >= minDte && dte <= maxDte) inBand.push({ exp, dte });
+  }
+  return inBand.sort((a, b) => a.dte - b.dte).map(x => x.exp);
 }
 
 function parseArgs() {
@@ -91,6 +111,12 @@ async function runBackfill() {
   for (const dayStr of tradingDays) {
     const snapshots = getMarketSnapshotsForDay(dayStr);
     const expiries = getNearExpiriesForDay(dayStr, allTuesdays, 2);
+
+    // Also capture the far-dated monthly/monthlies (18-70 DTE) for the monthly
+    // straddle backtest — the near-expiry window never contains them.
+    for (const farMonthly of getFarMonthlyExpiriesForDay(dayStr, allTuesdays)) {
+      if (!expiries.includes(farMonthly)) expiries.push(farMonthly);
+    }
 
     for (const timeStr of snapshots) {
       for (const expiryDate of expiries) {

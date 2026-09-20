@@ -2,7 +2,7 @@ import pkg from 'smartapi-javascript';
 const { SmartAPI } = pkg;
 import { authenticator } from 'otplib';
 import { SMARTAPI_CONFIG } from './config.js';
-import { downloadScripMaster, parseNiftyOptionsMaster, getNearestExpiries } from './scripMaster.js';
+import { downloadScripMaster, parseNiftyOptionsMaster, getNearestExpiries, getFarMonthlyExpiries } from './scripMaster.js';
 import { normalizeSmartAPI } from './normalize.js';
 import { saveRawSnapshot, saveUnifiedSnapshot, updateManifest } from './store.js';
 import { formatISOWithISTOffset, formatDateIST, formatTimeIST } from './ist.js';
@@ -108,7 +108,13 @@ export class SmartApiClient {
   }
 }
 
-export async function collectLiveSmartApiSnapshots(client, preDownloadedScripMaster = null, indexName = 'NIFTY') {
+export async function collectLiveSmartApiSnapshots(
+  client,
+  preDownloadedScripMaster = null,
+  indexName = 'NIFTY',
+  collectOptions = {}
+) {
+  const { includeNearExpiries = true, includeFarMonthly = true } = collectOptions;
   const isSensex = indexName.toUpperCase() === 'SENSEX';
   const targetIndex = isSensex ? 'SENSEX' : 'NIFTY';
   const optionExch = isSensex ? 'BFO' : 'NFO';
@@ -125,7 +131,16 @@ export async function collectLiveSmartApiSnapshots(client, preDownloadedScripMas
     return;
   }
 
-  const expiries = getNearestExpiries(options, 4);
+  let expiries = includeNearExpiries ? getNearestExpiries(options, 4) : [];
+
+  // Always consider the far-dated monthly (~45 DTE): the near-weekly window never
+  // contains it, and the NIFTY Monthly 45-DTE straddle needs it for backtesting.
+  if (includeFarMonthly && !isSensex) {
+    for (const farMonthly of getFarMonthlyExpiries(options)) {
+      if (!expiries.includes(farMonthly)) expiries.push(farMonthly);
+    }
+  }
+
   if (!expiries || expiries.length === 0) {
     console.log(`No upcoming expiries found for ${targetIndex}. Skipping collection.`);
     return;

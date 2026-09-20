@@ -97,3 +97,37 @@ export function getNearestExpiries(optionsList, count = 4, targetDateStr = null)
     .sort();
   return expiries.slice(0, count);
 }
+
+/**
+ * NIFTY monthly expiries = the LAST listed expiry within each calendar month
+ * (normally the last Tuesday; holiday-shifted months can land on a Monday).
+ *
+ * Returns EVERY monthly expiry whose DTE from `targetDateStr` falls inside
+ * [minDte, maxDte], ascending. Two can qualify at once, which is intentional:
+ * while one monthly is being tracked down to its 21-DTE exit, the next one is
+ * approaching its 45-DTE entry.
+ *
+ * Needed because the near-weekly capture window (getNearestExpiries) never
+ * includes the far-dated monthly contracts required by the NIFTY Monthly
+ * 45-DTE naked straddle backtest.
+ */
+export function getFarMonthlyExpiries(optionsList, targetDateStr = null, minDte = 18, maxDte = 70) {
+  const baseStr = targetDateStr || new Date().toISOString().substring(0, 10);
+  const baseMs = Date.parse(`${baseStr}T00:00:00Z`);
+
+  const expiries = Array.from(new Set(optionsList.map(o => o.expiry))).filter(Boolean).sort();
+
+  // Monthly = last listed expiry within each calendar month (holiday-shift safe)
+  const lastByMonth = new Map();
+  for (const exp of expiries) {
+    const ym = exp.substring(0, 7);
+    if (!lastByMonth.has(ym) || exp > lastByMonth.get(ym)) lastByMonth.set(ym, exp);
+  }
+
+  const inBand = [];
+  for (const exp of lastByMonth.values()) {
+    const dte = Math.round((Date.parse(`${exp}T00:00:00Z`) - baseMs) / 86400000);
+    if (dte >= minDte && dte <= maxDte) inBand.push({ exp, dte });
+  }
+  return inBand.sort((a, b) => a.dte - b.dte).map(x => x.exp);
+}
