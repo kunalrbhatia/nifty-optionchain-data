@@ -32,15 +32,23 @@ async function runLiveDaemon() {
     const timeStr = formatTimeIST(now);
     const currentMinuteStr = `${dayStr}_${timeStr.substring(0, 5)}`;
 
-    if (isExpiryDay('NIFTY', now) && isMarketHours(now)) {
+    const expiryDay = isExpiryDay('NIFTY', now);
+    const marketOpen = isMarketHours(now);
+
+    if (marketOpen) {
       const minute = now.getMinutes();
       // Execute snapshot on every 5th minute (0, 5, 10, 15, ..., 55)
       if (minute % 5 === 0 && lastCollectedMinute !== currentMinuteStr) {
         lastCollectedMinute = currentMinuteStr;
-        console.log(`\n[${timeStr}] Market open & NIFTY expiry day match. Fetching live snapshot...`);
+        // Expiry day -> near weeklies + far monthly. Regular day -> far monthly only,
+        // which keeps API load low while still building monthly-straddle history.
+        const collectOptions = expiryDay
+          ? { includeNearExpiries: true, includeFarMonthly: true }
+          : { includeNearExpiries: false, includeFarMonthly: true };
+        console.log(`\n[${timeStr}] Market open (${expiryDay ? 'NIFTY expiry day' : 'regular day'}). Fetching live snapshot...`);
         try {
           const startTime = Date.now();
-          await collectLiveSmartApiSnapshots(client, null, 'NIFTY');
+          await collectLiveSmartApiSnapshots(client, null, 'NIFTY', collectOptions);
           const elapsed = Date.now() - startTime;
           console.log(`[${timeStr}] NIFTY live snapshot collection complete in ${elapsed}ms`);
         } catch (err) {
