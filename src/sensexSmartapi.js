@@ -4,7 +4,7 @@ import { authenticator } from 'otplib';
 import { SMARTAPI_CONFIG, SENSEX_SPOT_TOKEN, SENSEX_SPOT_EXCHANGE, SENSEX_OPTIONS_EXCHANGE } from './sensex-config.js';
 import { downloadScripMaster, parseSensexOptionsMaster, getNearestExpiries } from './sensexScripMaster.js';
 import { saveRawSensexSnapshot, saveUnifiedSensexSnapshot, updateSensexManifest } from './sensexStore.js';
-import { formatISOWithISTOffset, formatDateIST, formatTimeIST } from './ist.js';
+import { formatISOWithISTOffset, formatDateIST, formatTimeIST, msToNextTotpWindow } from './ist.js';
 
 const CHUNK_SIZE = 50;
 
@@ -21,22 +21,39 @@ export class SensexSmartApiClient {
     this.optionsByToken = new Map();
   }
 
-  async login() {
+  async login(maxAttempts = 3) {
     if (!SMARTAPI_CONFIG.apiKey || !SMARTAPI_CONFIG.clientCode) {
       throw new Error('SmartAPI credentials missing in environment variables.');
     }
-    const totp = authenticator.generate(SMARTAPI_CONFIG.totpSecret);
-    const res = await this.smartApi.generateSession(
-      SMARTAPI_CONFIG.clientCode,
-      SMARTAPI_CONFIG.clientPin,
-      totp
-    );
-    if (!res.status || !res.data?.jwtToken) {
-      throw new Error(`SmartAPI login failed: ${res.message || JSON.stringify(res)}`);
+
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      const totp = authenticator.generate(SMARTAPI_CONFIG.totpSecret);
+      const res = await this.smartApi.generateSession(
+        SMARTAPI_CONFIG.clientCode,
+        SMARTAPI_CONFIG.clientPin,
+        totp
+      );
+
+      if (res.status && res.data?.jwtToken) {
+        this.jwtToken = res.data.jwtToken;
+        this.smartApi.setAccessToken(this.jwtToken);
+        console.log('SENSEX SmartAPI authenticated successfully.');
+        return;
+      }
+
+      // 403 = this TOTP code was already consumed inside the current 30s window.
+      // Wait out the window and retry with a fresh code rather than crash-looping.
+      if (res.status === 403 && attempt < maxAttempts) {
+        const waitMs = msToNextTotpWindow();
+        console.log(
+          `SENSEX login 403 (TOTP window already used). Retrying in ${Math.ceil(waitMs / 1000)}s with a fresh code...`
+        );
+        await sleep(waitMs);
+        continue;
+      }
+
+      throw new Error(`SENSEX SmartAPI login failed: ${res.message || JSON.stringify(res)}`);
     }
-    this.jwtToken = res.data.jwtToken;
-    this.smartApi.setAccessToken(this.jwtToken);
-    console.log('SENSEX SmartAPI authenticated successfully.');
   }
 
   async initInstruments() {

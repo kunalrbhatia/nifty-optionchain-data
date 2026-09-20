@@ -5,7 +5,7 @@ import { SMARTAPI_CONFIG } from './config.js';
 import { downloadScripMaster, parseNiftyOptionsMaster, getNearestExpiries, getFarMonthlyExpiries } from './scripMaster.js';
 import { normalizeSmartAPI } from './normalize.js';
 import { saveRawSnapshot, saveUnifiedSnapshot, updateManifest } from './store.js';
-import { formatISOWithISTOffset, formatDateIST, formatTimeIST } from './ist.js';
+import { formatISOWithISTOffset, formatDateIST, formatTimeIST, msToNextTotpWindow } from './ist.js';
 
 const CHUNK_SIZE = 50;
 
@@ -21,25 +21,40 @@ export class SmartApiClient {
     this.jwtToken = null;
   }
 
-  async login() {
+  async login(maxAttempts = 3) {
     if (!SMARTAPI_CONFIG.apiKey || !SMARTAPI_CONFIG.clientCode) {
       throw new Error('SmartAPI credentials missing in environment variables.');
     }
 
-    const totp = authenticator.generate(SMARTAPI_CONFIG.totpSecret);
-    const res = await this.smartApi.generateSession(
-      SMARTAPI_CONFIG.clientCode,
-      SMARTAPI_CONFIG.clientPin,
-      totp
-    );
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      const totp = authenticator.generate(SMARTAPI_CONFIG.totpSecret);
+      const res = await this.smartApi.generateSession(
+        SMARTAPI_CONFIG.clientCode,
+        SMARTAPI_CONFIG.clientPin,
+        totp
+      );
 
-    if (!res.status || !res.data?.jwtToken) {
+      if (res.status && res.data?.jwtToken) {
+        this.jwtToken = res.data.jwtToken;
+        this.smartApi.setAccessToken(this.jwtToken);
+        console.log('SmartAPI authenticated successfully.');
+        return;
+      }
+
+      // 403 = this TOTP code was already consumed inside the current 30s window,
+      // typical when several processes restart together. Wait out the window and
+      // retry with a fresh code instead of crash-looping.
+      if (res.status === 403 && attempt < maxAttempts) {
+        const waitMs = msToNextTotpWindow();
+        console.log(
+          `Login 403 (TOTP window already used). Retrying in ${Math.ceil(waitMs / 1000)}s with a fresh code...`
+        );
+        await sleep(waitMs);
+        continue;
+      }
+
       throw new Error(`SmartAPI login failed: ${res.message || JSON.stringify(res)}`);
     }
-
-    this.jwtToken = res.data.jwtToken;
-    this.smartApi.setAccessToken(this.jwtToken);
-    console.log('SmartAPI authenticated successfully.');
   }
 
   async fetchMarketDataChunk(tokens, exchange = 'NFO') {
